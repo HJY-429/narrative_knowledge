@@ -1,0 +1,11 @@
+{
+  "doc_link": "https://docs.com/doc1",
+  "topic_name": "single0",
+  "database_uri": null,
+  "custom_metadata": {
+    "force_regenerate": "True",
+    "content_type": "application/octet-stream"
+  },
+  "file_name": "pipeline_design.md",
+  "build_id": "56277b005d40feffd9bc8b29730c8e5f18377758cfbedb7e988f6dfc090ccfe8"
+}
