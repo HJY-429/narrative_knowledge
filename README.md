@@ -55,10 +55,8 @@ Dynamically chains tools into pipelines based on processing scenarios:
 - `single_doc_existing_topic`: ETL → Graph Build
 - `batch_doc_existing_topic`: ETL → Blueprint Gen → Graph Build
 - `new_topic_batch`: ETL → Blueprint Gen → Graph Build
-- `text_to_graph`: Direct graph building from text
 - `knowledge_build`: Create knowledge blocks and extraction
 - `memory_direct_graph`: Direct memory graph building
-- `memory_single`: Single memory processing
 
 #### 3. **Knowledge Graph Components** (`knowledge_graph/`)
 
@@ -172,7 +170,7 @@ FastAPI-based REST service with three main routers:
    ```bash
    # LLM Settings
    LLM_PROVIDER=ollama              # Options: openai, gemini, ollama, bedrock, openai_like
-   LLM_MODEL=qwen3:1.7b             # Model identifier
+   LLM_MODEL=qwen3:8b             # Model identifier
    
    # Optional: For specific providers
    OPENAI_API_KEY=your-key
@@ -240,7 +238,9 @@ curl "http://localhost:8000/api/v1/knowledge/topics"
 
 ## API Reference
 
-### Document Upload
+**See `api/README.md` for Detailed Information.**
+
+### 1. Document Upload
 
 **POST** `/api/v1/knowledge/upload`
 
@@ -262,7 +262,7 @@ Upload and process documents for knowledge graph building.
 - Max total batch size: 30MB
 - Max individual file: 30MB
 
-### Trigger Processing
+### 2. Trigger Processing
 
 **POST** `/api/v1/knowledge/trigger-processing`
 
@@ -272,7 +272,7 @@ Manually trigger knowledge graph building for a topic.
 - `topic_name` (string): Topic to process
 - `database_uri` (string, optional): Database URI filter
 
-### List Topics
+### 3. List Topics
 
 **GET** `/api/v1/knowledge/topics`
 
@@ -282,6 +282,8 @@ Retrieve all topics and their processing status.
 - `database_uri` (string, optional): Filter by database
 
 ## Enhanced Data Processing Pipeline
+
+**See `api/README.md` for Detailed Information.**
 
 ### Overview
 
@@ -293,30 +295,31 @@ The `/api/v1/save` endpoint provides a unified interface for document upload and
 
 **GET** `/api/v1/tasks/{task_id}` - Check status of a background task
 
-### File Upload Processing
+### 1. File Upload Processing
 
-#### Build Knowledge Graphs
+#### (1) Build Knowledge Graphs and Blocks
 ```bash
 curl -X POST "http://localhost:8000/api/v1/save" \
-  -F "files=@document.pdf" \
-  -F 'links=["https://example.com/doc"]' \
-  -F 'metadata={"topic_name":"my_topic","force_regenerate":true}' \
+  -F "files=@pipeline_design.md" \
+  -F 'links=["https://docs.com/doc1example"]' \
+  -F 'metadata={"topic_name":"single0","force_regenerate":"True"}' \
   -F "target_type=knowledge_graph" \
-  -F 'process_strategy={"pipeline":["etl","blueprint_gen","graph_build"]}'
+  -F 'process_strategy={"pipeline":["etl","blueprint_gen","graph_build"], "knowledge_build": "True"}'
 ```
 
 **Parameters:**
 - `files`: Document file(s)
-- `links`: Document URLs (optional)
+- `links`: Document URLs (optional, must match the number of files if exists)
 - `metadata`: JSON with `topic_name` (required), `force_regenerate` (optional)
 - `target_type`: `"knowledge_graph"`
-- `process_strategy`: JSON with `pipeline` array (optional)
+- `process_strategy`: JSON with `pipeline` array (optional) and `knowledge_build` boolean string (required for building knowledge blocks)
 
-#### Build Knowledge Blocks Only
+#### (2) Build Knowledge Blocks Only
 ```bash
 curl -X POST "http://localhost:8000/api/v1/save" \
-  -F "files=@document.md" \
-  -F 'metadata={"topic_name":"my_topic"}' \
+  -F "files=@pipeline_design.md" \
+  -F 'links=["https://docs.com/doc1"]' \
+  -F 'metadata={"topic_name":"singlek0","force_regenerate":"True"}' \
   -F "target_type=knowledge_build"
 ```
 
@@ -325,7 +328,7 @@ curl -X POST "http://localhost:8000/api/v1/save" \
 - `metadata`: JSON with `topic_name` (required)
 - `target_type`: `"knowledge_build"`
 
-### JSON Input Processing
+### 2. JSON Input Processing
 
 #### Memory/Chat History
 ```bash
@@ -346,10 +349,10 @@ curl -X POST "http://localhost:8000/api/v1/save" \
 - `metadata`: JSON with `user_id` (required)
 - `target_type`: `"personal_memory"`
 
-### Task Status Checking
+### 3. Task Status Checking
 
 ```bash
-curl "http://localhost:8000/api/v1/tasks/task_id_here"
+curl "http://localhost:8000/api/v1/tasks/{task_id}"
 ```
 
 Returns `status` (processing/completed) and results when ready.
@@ -364,15 +367,20 @@ Returns `status` (processing/completed) and results when ready.
 **Memory:**
 - `memory_direct_graph`: Direct memory processing with graph building
 
-### Background Processing
+### Background Processing Daemon
 
-**Daemon:** `python tools/daemon.py [--mode files|memory] [--interval seconds]`
+`python tools/daemon.py [--mode files|memory] [--interval seconds]`
 
 Automatically processes pending documents or memory data in the background.
 
-## Processing Pipeline
+## Pipeline Processing
 
-### Single Document to Existing Topic
+**Orchestration**: Tool-Based Pipeline Architecture (in `tools/orchestrator.py`)
+
+Chains knowledge extraction methods into coherent workflows and different scenarios:
+
+### 1. Single Document to Existing Topic
+
 
 ```
 Raw Document
@@ -382,112 +390,224 @@ Raw Document
 [Graph Build Tool] → Knowledge Graph
 ```
 
-### Batch Documents to Existing Topic
+### 2. Batch Documents to Existing Topic
 
 ```
 Raw Documents (batch)
     ↓
-[ETL Tool] → SourceData (parallel)
+[ETL Tool] → SourceData
     ↓
 [Blueprint Gen Tool] → Analysis Blueprint (updated)
     ↓
-[Graph Build Tool] → Knowledge Graph (parallel)
+[Graph Build Tool] → Knowledge Graph
 ```
 
-### New Topic with Batch Documents
+### 3. New Topic with Batch Documents
 
 ```
 Raw Documents (batch)
     ↓
-[ETL Tool] → SourceData (parallel)
+[ETL Tool] → SourceData
     ↓
 [Blueprint Gen Tool] → Analysis Blueprint (new)
     ↓
-[Graph Build Tool] → Knowledge Graph (parallel)
+[Graph Build Tool] → Knowledge Graph
 ```
 
-## Core Concepts
+### 4. Memory/Chat Messages Processing 
 
-### Topic
-A logical grouping for related documents. Serves as a context boundary for knowledge extraction and blueprint generation.
+```
+Raw Json Messages (single / batch)
+    ↓
+[ETL Tool] → SourceData
+    ↓
+[Blueprint Gen Tool] → Analysis Blueprint (personal)
+    ↓
+[Graph Build Tool] → Knowledge Graph
+```
 
-### Analysis Blueprint
-Shared context generated from all documents in a topic. Contains:
-- Key entities and themes
-- Cross-document relationships
-- Domain-specific context
+### 5. Knowledge Blocks Extraction
 
-Created once per topic and updated when new batch documents are added. Used to ensure consistent, high-quality knowledge extraction.
+```
+Combined with above pipelines to specify accurate and consistent documents summarization
+```
 
-### SourceData
-Structured representation of a processed document containing:
-- Extracted text blocks
-- Content metadata
-- Initial entity mappings
-- Link to original document
 
-### Knowledge Graph
-Network of entities and relationships extracted from documents with:
-- Entity deduplication
-- Relationship consolidation
-- Directional connections
-- Quality validation
+Each pipeline leverages previous outputs to enhance extraction quality and consistency.
 
-### Entity
-Atomic nodes in the knowledge graph representing real-world concepts. Each entity has:
-- Unique identifier and canonical name
-- Description and attributes (entity_type, domain, aliases)
-- Vector embedding for semantic similarity
-- Relationships to other entities
 
-### Relationship
-Directional edges connecting entities, representing semantic connections. Contains:
-- Source entity reference
-- Target entity reference
-- Relationship description
-- Vector embedding for semantic matching
-- Attributes and metadata
+## Knowledge Generation Methods & Concepts
 
-### Knowledge Block
-Atomic knowledge unit extracted from source documents. Represents smaller, granular pieces of knowledge:
-- Multiple types: QA, paragraph, synopsis, code, chat summary, etc.
-- Content with optional vector embedding
-- Hash-based deduplication to avoid duplicates
-- Links to source documents via BlockSourceMapping
+The system employs multiple **LLM-based** approaches to extract, structure, and represent knowledge from documents.
 
-### ContentStore
-Deduplicated content storage system using SHA-256 hashing:
-- Prevents redundant storage of identical content
-- Tracks content size and type
-- Stores reference to original document links
-- Enables efficient content reuse across multiple SourceData entries
+### Document Cognitive Mapping
+**Method**: DocumentCognitiveMapGenerator (in `knowledge_graph/congnitive_map.py`)
+
+Generates internal representations of document structure and key concepts:
+- **Purpose**: Foundation for subsequent processing stages
+- **Capabilities**:
+  - Identifies document organization and hierarchy
+  - Captures main topics and their relationships
+  - Recognizes core entities and temporal markers
+  - Generates topic-focused document summaries
+- **Caching**: Results cached in database to avoid recomputation
+- **Parallelization**: Processes multiple documents concurrently
+- **Output**: Cognitive map stored as DocumentSummary for reuse
+
+### Analysis Blueprint Generation
+**Component**: KnowledgeGraphBuilder(in `knowledge_graph/graph_builder.py`)
+
+Creates shared context from all documents in a topic:
+- **Purpose**: Ensures consistent, high-quality knowledge extraction across documents
+- **Process**:
+  - Analyzes cognitive maps from all topic documents
+  - Identifies canonical entities and shared themes
+  - Establishes cross-document relationships
+  - Generates processing instructions
+- **Lifecycle**: Created once per topic, updated when new batches added
+- **Flexibility**: Stored as JSON for adaptation to evolving cognitive architectures
+- **Usage**: Provides context for all subsequent graph building operations
+
+### Narrative Triplet Extraction
+**Component**: NarrativeKnowledgeGraphBuilder (in `knowledge_graph/graph.py`)
+
+Extracts structured $\texttt{entity-relationship-entity}$ source-mapping triplets from documents:
+- **Purpose**: Primary mechanism for converting narrative text to graph structure
+- **Capabilities**:
+  - Identifies entities and their relationships from text
+  - Extracts semantic connections and directional relationships
+  - Applies quality validation during extraction
+  - Generates vector embeddings for semantic matching
+- **Deduplication**: Entity and relationship consolidation across documents
+- **Quality Assurance**: Subject to entity and relationship quality standards
+
+### Knowledge Block Extraction
+**Component**: KnowledgeBuilder (in `knowledge_graph/knowledge.py`)
+
+Extracts and deduplicates granular knowledge units from documents:
+- **Purpose**: Creates atomic, reusable knowledge pieces for both graph and block storage
+- **Process**:
+  - Parses documents into text blocks
+  - Generates knowledge blocks of multiple types (QA, paragraphs, code, etc.)
+  - Hash-based deduplication to avoid redundant blocks
+  - Links blocks to source documents
+- **Parallelization**: Batch processing of documents
+- **Embeddings**: Generates vector representations for semantic search
+- **Flexibility**: Supports various knowledge types and sources
+
+### Personal Memory & Narrative Building
+**Component**: Memory system (in `memory_system.py`)
+
+Extends knowledge graph concepts to personal narrative data:
+- **Purpose**: Extracts holistic user insights from conversation histories
+- **Capabilities**:
+  - Identifies explicit identity declarations and roles
+  - Recognizes recurring interests and topics
+  - Captures goals, plans, and challenges
+  - Tracks significant life events and achievements
+  - Builds personal cognitive maps and memory-specific blueprints
+- **Processing**: Similar pipeline to document processing but adapted for conversational data
+
+
+## Data Storage Models
+
+The system uses SQLAlchemy ORM models to persist processed documents, extracted knowledge, and graph structures. These models enable efficient storage, retrieval, and tracking throughout the processing pipeline.
 
 ### RawDataSource
 Represents uploaded files before ETL processing:
-- Tracks file path and original filename
-- Maintains processing status (uploaded → etl_pending → etl_completed)
-- Stores file hash for integrity verification
-- Captures custom metadata from upload request
+- **Purpose**: Initial entry point for all document inputs
+- **Attributes**: File path, original filename, topic association, file hash (SHA-256)
+- **Status Tracking**: `uploaded` → `etl_pending` → `etl_processing` → `etl_completed`
+- **Metadata**: Custom metadata from upload request, process strategy definition
+- **Relationships**: Linked to SourceData entries after ETL processing
+
+### ContentStore
+Deduplicated content storage system using SHA-256 hashing:
+- **Purpose**: Prevents redundant storage of identical content across documents
+- **Key Features**:
+  - Content hash-based deduplication
+  - Tracks content size and type
+  - References document links
+  - Enables efficient content reuse across multiple SourceData entries
+- **Use Case**: Multiple documents may reference the same content through content_hash
 
 ### SourceData
 Processed document state after ETL extraction:
-- References both RawDataSource (original file) and ContentStore (deduplicated content)
-- Tracks graph building status (created → graph_pending → graph_completed)
-- Links to original document URL
-- Contains document attributes and metadata
+- **Purpose**: Structured representation of documents ready for graph building
+- **Content**: References both RawDataSource (original file) and ContentStore (deduplicated content)
+- **Status Tracking**: `created` → `graph_pending` → `graph_processing` → `graph_completed`
+- **Attributes**: Document name, topic, link, source type, metadata
+- **Relationships**: Links to content, raw source, knowledge blocks, and graph elements
+
+### AnalysisBlueprint
+Flexible analysis blueprint for topic-focused knowledge extraction:
+- **Purpose**: Shared context generated from all documents in a topic
+- **Contents** (stored as JSON for flexibility):
+  - Canonical entities and key patterns
+  - Cross-document relationships
+  - Global timeline and domain-specific context
+  - Processing instructions for consistent extraction
+- **Status**: `outdated` → `generating` → `ready`
+- **Tracking**: Records contributing source data IDs and version hash
+
+### GraphBuild
+Tracks graph construction progress and status:
+- **Purpose**: Manages topic and source combination processing state
+- **Attributes**: Topic name, build ID, processing status, scheduled time
+- **Status**: `uploaded` → `pending` → `processing` → `completed`
+- **Tracking**: Links document, external database URI, storage directory, and progress info
+
+### KnowledgeBlock
+Atomic knowledge units extracted from source documents:
+- **Purpose**: Represents granular, reusable pieces of knowledge
+- **Types**: QA, paragraph, synopsis, image, video, code, chat summary, chat content
+- **Features**:
+  - Hash-based deduplication to avoid duplicate blocks
+  - Vector embedding (4096 dimensions) for semantic similarity
+  - Context and metadata storage
+  - Links to source documents via BlockSourceMapping
+- **Tracking**: Maps to source documents through BlockSourceMapping table
+
+### Entity
+Graph nodes representing real-world concepts and entities:
+- **Purpose**: Atomic units in the knowledge graph
+- **Attributes**:
+  - Unique identifier and canonical name
+  - Description with vector embedding (4096 dimensions)
+  - Structured attributes (entity_type, domain, aliases, searchable_keywords)
+  - Semantic vector for similarity matching
+- **Quality**: Subject to entity quality standards (non-redundant, precise, accurate, coherent)
+
+### Relationship
+Directional edges connecting entities in the knowledge graph:
+- **Purpose**: Represents semantic connections between entities
+- **Structure**:
+  - Source entity reference
+  - Target entity reference
+  - Relationship description with vector embedding
+  - Attributes and metadata
+- **Quality**: Clear semantics, verified factual accuracy, consistent directionality
+
 
 ### DocumentSummary
-Topic-focused summary of individual documents for efficient processing:
-- Captures key entities and themes
-- Stores business context
-- Enables fast blueprint generation by avoiding full document re-analysis
-- One summary per document-topic combination
+Topic-focused summary for efficient blueprint generation:
+- **Purpose**: Reduces need for full document re-analysis during blueprint generation
+- **Contents**:
+  - Key entities and main themes
+  - Business context and importance
+  - Document type classification
+  - Document-topic combination (one summary per combination)
+- **Use Case**: Accelerates blueprint updates when new batch documents are added
 
-### DocumentCognitiveMap
-Internal representation of document structure and key concepts:
-- Captures document organization and hierarchy
-- Identifies main topics and their relationships
-- Used during graph building to enhance extraction quality
+### BackgroundTask
+Async processing task tracking across workers:
+- **Purpose**: Manages asynchronous operations for document and memory processing
+- **Use Cases**: Memory processing, file processing, knowledge extraction
+- **Tracking**: Status, source reference, user association, error messages
+
+### Supporting Mappings
+- **BlockSourceMapping**: M-to-M relationship between KnowledgeBlocks and SourceData
+- **SourceGraphMapping**: M-to-M relationship between SourceData and graph elements (entities/relationships)
 
 ## Quality Standards
 
